@@ -1,4 +1,4 @@
-import React, { Suspense, useEffect, useState } from "react";
+import React, { Suspense, useEffect, useState, useRef } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Preload, useGLTF } from "@react-three/drei";
 
@@ -31,6 +31,8 @@ const Computers = ({ isMobile }) => {
 
 const ComputersCanvas = () => {
   const [isMobile, setIsMobile] = useState(false);
+  const [isVisible, setIsVisible] = useState(false);
+  const canvasRef = useRef(null);
 
   useEffect(() => {
     // Add a listener for changes to the screen size
@@ -47,31 +49,79 @@ const ComputersCanvas = () => {
     // Add the callback function as a listener for changes to the media query
     mediaQuery.addEventListener("change", handleMediaQueryChange);
 
-    // Remove the listener when the component is unmounted
+    // Delay initialization to manage WebGL contexts better
+    const timer = setTimeout(() => {
+      setIsVisible(true);
+    }, 100);
+
+    // Create an intersection observer to only render when visible
+    if (canvasRef.current) {
+      const observer = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+              setIsVisible(true);
+            } else {
+              setIsVisible(false);
+            }
+          });
+        },
+        { threshold: 0.1 }
+      );
+      
+      observer.observe(canvasRef.current);
+      
+      return () => {
+        observer.disconnect();
+        mediaQuery.removeEventListener("change", handleMediaQueryChange);
+        clearTimeout(timer);
+      };
+    }
+
+    // Clean up
     return () => {
       mediaQuery.removeEventListener("change", handleMediaQueryChange);
+      clearTimeout(timer);
+    };
+  }, []);
+
+  // Clean up WebGL resources with useGLTF
+  useEffect(() => {
+    return () => {
+      // Cleanup function
+      if (typeof window !== 'undefined') {
+        useGLTF.preload("./desktop_pc/scene.gltf");
+      }
     };
   }, []);
 
   return (
-    <Canvas
-      frameloop='demand'
-      shadows
-      dpr={[1, 2]}
-      camera={{ position: [20, 3, 5], fov: 25 }}
-      gl={{ preserveDrawingBuffer: true }}
-    >
-      <Suspense fallback={<CanvasLoader />}>
-        <OrbitControls
-          enableZoom={false}
-          maxPolarAngle={Math.PI / 2}
-          minPolarAngle={Math.PI / 2}
-        />
-        <Computers isMobile={isMobile} />
-      </Suspense>
-
-      <Preload all />
-    </Canvas>
+    <div ref={canvasRef} className="w-full h-full">
+      {isVisible && (
+        <Canvas
+          frameloop='demand'
+          shadows
+          dpr={[1, 1.5]} // Reduced from [1, 2] to improve performance
+          camera={{ position: [20, 3, 5], fov: 25 }}
+          gl={{ 
+            preserveDrawingBuffer: true,
+            powerPreference: 'high-performance',
+            antialias: false, // Disable antialiasing for better performance
+          }}
+        >
+          <Suspense fallback={<CanvasLoader />}>
+            <OrbitControls
+              enableZoom={false}
+              maxPolarAngle={Math.PI / 2}
+              minPolarAngle={Math.PI / 2}
+              autoRotate={false} // Disable auto-rotation to reduce GPU usage
+            />
+            <Computers isMobile={isMobile} />
+          </Suspense>
+          <Preload all />
+        </Canvas>
+      )}
+    </div>
   );
 };
 
